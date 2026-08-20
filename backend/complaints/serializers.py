@@ -31,10 +31,32 @@ class PredictOnlySerializer(serializers.Serializer):
         choices=Complaint.Category.choices,
         default=Complaint.Category.OTHER,
     )
-    block             = serializers.ChoiceField(choices=Complaint.Block.choices)
-    floor             = serializers.ChoiceField(choices=Complaint.Floor.choices)
+    block             = serializers.ChoiceField(choices=Complaint.Block.choices, required=False, allow_blank=True)
+    floor             = serializers.ChoiceField(choices=Complaint.Floor.choices, required=False, allow_blank=True)
     students_affected = serializers.IntegerField(min_value=1, default=1)
     support_count     = serializers.IntegerField(min_value=0, default=0)
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if request and request.user and request.user.is_authenticated:
+            try:
+                profile = request.user.profile
+                if not profile.block or not profile.floor or not profile.room_no or not profile.profile_complete:
+                    raise serializers.ValidationError(
+                        "Please complete your hostel profile before submitting a complaint."
+                    )
+                attrs["block"] = profile.block
+                attrs["floor"] = profile.floor
+            except AttributeError:
+                raise serializers.ValidationError(
+                    "Please complete your hostel profile before submitting a complaint."
+                )
+        else:
+            if not attrs.get("block") or not attrs.get("floor"):
+                raise serializers.ValidationError(
+                    "Hostel block and floor are required for priority prediction."
+                )
+        return attrs
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,6 +182,7 @@ class ComplaintSerializer(serializers.ModelSerializer):
             "floor",
             "room_no",
             "students_affected",
+            "duration",
             "support_count",
             "predicted_priority",
             "status",
@@ -189,6 +212,10 @@ class ComplaintCreateSerializer(serializers.ModelSerializer):
     submitted_by is NOT accepted from the client; it is set from the JWT token.
     predicted_priority and status are set by the server.
     """
+    block   = serializers.CharField(required=False, allow_blank=True)
+    floor   = serializers.CharField(required=False, allow_blank=True)
+    room_no = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model  = Complaint
         fields = [
@@ -199,6 +226,7 @@ class ComplaintCreateSerializer(serializers.ModelSerializer):
             "floor",
             "room_no",
             "students_affected",
+            "duration",
         ]
 
     def validate_complaint_text(self, value):
@@ -212,6 +240,31 @@ class ComplaintCreateSerializer(serializers.ModelSerializer):
         if value < 1:
             raise serializers.ValidationError("students_affected must be at least 1.")
         return value
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if not request or not request.user or not request.user.is_authenticated:
+            raise serializers.ValidationError("Authentication credentials were not provided.")
+
+        try:
+            profile = request.user.profile
+        except AttributeError:
+            raise serializers.ValidationError(
+                "Please complete your hostel profile before submitting a complaint."
+            )
+
+        if not profile.block or not profile.floor or not profile.room_no or not profile.profile_complete:
+            raise serializers.ValidationError(
+                "Please complete your hostel profile before submitting a complaint."
+            )
+
+        # Do not trust Block, Floor, or Room Number values coming from the client.
+        # Overwrite them with values from the StudentProfile.
+        attrs["block"] = profile.block
+        attrs["floor"] = profile.floor
+        attrs["room_no"] = profile.room_no
+
+        return attrs
 
 
 class ComplaintStatusUpdateSerializer(serializers.ModelSerializer):

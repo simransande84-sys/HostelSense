@@ -8,7 +8,7 @@ import { ComplaintService } from '../../core/services/complaint.service';
 import { VoteService } from '../../core/services/vote.service';
 import { AuthService } from '../../core/services/auth.service';
 import { Complaint } from '../../core/models/complaint.model';
-import { PriorityBadgeComponent } from '../../shared/components/priority-badge/priority-badge.component';
+
 import { StatusBadgeComponent } from '../../shared/components/status-badge/status-badge.component';
 
 @Component({
@@ -20,13 +20,12 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
     MatSnackBarModule,
     MatProgressSpinnerModule,
     MatSelectModule,
-    PriorityBadgeComponent,
     StatusBadgeComponent
   ],
   template: `
     <div class="page-header">
       <h1>Public Noticeboard Feed</h1>
-      <p>Browse complaints submitted by residents. Support issues affecting your block to increase priority ranking.</p>
+      <p>Browse complaints submitted by residents. Support issues affecting your block to help the community.</p>
     </div>
 
     <!-- Toolbar & Filters -->
@@ -84,7 +83,6 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
             <span class="tag-location">Block {{ c.block }}</span>
             <span *ngIf="c.room_no" class="tag-location">Room {{ c.room_no }}</span>
           </div>
-          <app-priority-badge [priority]="c.predicted_priority" />
         </div>
 
         <div class="complaint-body">
@@ -389,7 +387,7 @@ export class PublicFeedComponent implements OnInit {
         });
         this.complaints.set(updated);
         this.applyFilter();
-        this.snack.open('Support added! Priority updated.', 'OK', { duration: 2500 });
+        this.snack.open('Support added! Thank you for your upvote.', 'OK', { duration: 2500 });
       },
       error: err => {
         this.votingId.set(null);

@@ -56,6 +56,26 @@ class Complaint(models.Model):
         RESOLVED    = "Resolved",    "Resolved"
         REJECTED    = "Rejected",    "Rejected"
 
+    class Duration(models.TextChoices):
+        # Values must match Duration_Standardized format in training data: "N unit"
+        ONE_HOUR    = "1 hour",   "1 hour"
+        TWO_HOURS   = "2 hours",  "2 hours"
+        THREE_HOURS = "3 hours",  "3 hours"
+        FOUR_HOURS  = "4 hours",  "4 hours"
+        FIVE_HOURS  = "5 hours",  "5 hours"
+        SIX_HOURS   = "6 hours",  "6 hours"
+        EIGHT_HOURS = "8 hours",  "8 hours"
+        ONE_DAY     = "1 day",    "1 day"
+        TWO_DAYS    = "2 days",   "2 days"
+        THREE_DAYS  = "3 days",   "3 days"
+        FOUR_DAYS   = "4 days",   "4 days"
+        SIX_DAYS    = "6 days",   "6 days"
+        EIGHT_DAYS  = "8 days",   "8 days"
+        TWELVE_DAYS = "12 days",  "12 days"
+        ONE_WEEK    = "1 week",   "1 week"
+        TWO_WEEKS   = "2 weeks",  "2 weeks"
+        FOUR_WEEKS  = "4 weeks",  "4 weeks"
+
     # ── Core fields ───────────────────────────────────────────────────────────
     complaint_text = models.TextField(
         help_text="Raw complaint text submitted by the student."
@@ -85,6 +105,13 @@ class Complaint(models.Model):
         help_text="Room number (optional).",
     )
     students_affected = models.PositiveIntegerField(default=1)
+    duration = models.CharField(
+        max_length=30,
+        choices=Duration.choices,
+        blank=True,
+        null=True,
+        help_text="How long the issue has persisted. NULL for legacy complaints.",
+    )
     support_count = models.PositiveIntegerField(
         default=0,
         help_text="Incremented each time a student clicks Support.",

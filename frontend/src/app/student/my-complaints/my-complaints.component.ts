@@ -3,13 +3,13 @@ import { CommonModule } from '@angular/common';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ComplaintService } from '../../core/services/complaint.service';
 import { Complaint } from '../../core/models/complaint.model';
-import { PriorityBadgeComponent } from '../../shared/components/priority-badge/priority-badge.component';
+
 import { StatusBadgeComponent } from '../../shared/components/status-badge/status-badge.component';
 
 @Component({
   selector: 'app-my-complaints',
   standalone: true,
-  imports: [CommonModule, MatProgressSpinnerModule, PriorityBadgeComponent, StatusBadgeComponent],
+  imports: [CommonModule, MatProgressSpinnerModule, StatusBadgeComponent],
   template: `
     <div class="page-header">
       <h1>My Requests History</h1>
@@ -41,7 +41,7 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
               <th>Category</th>
               <th>Location</th>
               <th>Scope</th>
-              <th>Priority Score</th>
+
               <th>Status</th>
               <th>Upvotes</th>
               <th>Date Created</th>
@@ -66,7 +66,7 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
                   {{ c.complaint_type }}
                 </span>
               </td>
-              <td><app-priority-badge [priority]="c.predicted_priority" /></td>
+
               <td><app-status-badge [status]="c.status" /></td>
               <td class="upvote-cell">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">

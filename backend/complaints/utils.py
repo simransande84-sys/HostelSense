@@ -5,14 +5,27 @@ ML prediction utilities for HostelSenseAI.
 
 Design decisions
 ----------------
-* All three pkl artifacts are loaded ONCE at module import time (singleton pattern).
-  Subsequent calls to predict_priority() reuse the already-loaded objects, making
-  the API response fast with no repeated disk I/O.
-* The saved model (hostel_priority_model.pkl) is a full sklearn Pipeline
-  (ColumnTransformer + LinearSVC), so it accepts raw DataFrames — no manual
-  TF-IDF or scaling is needed here.
-* NLP preprocessing (lowercase, punctuation removal, lemmatisation) is reproduced
-  here to match exactly what was done during training (standalone_train_save.py).
+* preprocessor.pkl (ColumnTransformer) and model.pkl (LinearSVC) are loaded
+  ONCE at module import time (singleton pattern).  Subsequent calls reuse the
+  already-loaded objects — no repeated disk I/O per request.
+
+* The ColumnTransformer expects a DataFrame with exactly these columns:
+    Cleaned_Text   — NLP-preprocessed complaint text
+    Category       — categorical (OneHotEncoder)
+    Complaint_Type — categorical (OneHotEncoder)
+    Block          — categorical (OneHotEncoder)
+    Floor          — categorical (OneHotEncoder)
+    Duration_Hours — float (StandardScaler)
+
+* Duration_Hours is derived from the complaint's `duration` field (text choice)
+  or from elapsed time since created_at.  It is NOT a raw text column.
+
+* Excluded features (Support_Count, Students_Affected, Room_No, Status,
+  Complaint_Date, Complaint_ID) are never passed to the model.
+
+* NLP preprocessing matches the notebook exactly:
+    lowercase → domain normalisations → contraction expansion →
+    punctuation removal → digit removal → stopword removal (len≥2) → lemmatise
 """
 import os
 import re
@@ -20,6 +33,8 @@ import logging
 
 import joblib
 import pandas as pd
+import numpy as np
+from scipy.sparse import issparse
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
@@ -36,37 +51,131 @@ nltk.download("omw-1.4",   quiet=True)
 _MODEL_DIR = settings.ML_MODEL_DIR
 
 try:
-    _model         = joblib.load(os.path.join(_MODEL_DIR, "hostel_priority_model.pkl"))
+    _preprocessor  = joblib.load(os.path.join(_MODEL_DIR, "preprocessor.pkl"))
+    _model         = joblib.load(os.path.join(_MODEL_DIR, "model.pkl"))
     _label_encoder = joblib.load(os.path.join(_MODEL_DIR, "label_encoder.pkl"))
-    _domain_sw     = joblib.load(os.path.join(_MODEL_DIR, "domain_stopwords.pkl"))
-    logger.info("ML artifacts loaded successfully from %s", _MODEL_DIR)
+    logger.info(
+        "ML artifacts loaded — preprocessor: %s | model: %s | classes: %s",
+        type(_preprocessor).__name__,
+        type(_model).__name__,
+        _label_encoder.classes_.tolist(),
+    )
 except Exception as exc:
-    _model = _label_encoder = _domain_sw = None
+    _preprocessor = _model = _label_encoder = None
     logger.error("Failed to load ML artifacts: %s", exc)
 
-# ── Build combined stopword set ────────────────────────────────────────────────
-_std_stopwords = set(stopwords.words("english")) if _domain_sw is not None else set()
-_all_stopwords = _std_stopwords.union(_domain_sw or set())
-_lemmatizer    = WordNetLemmatizer()
+# ── Stopword set (matches notebook exactly) ────────────────────────────────────
+_DOMAIN_STOPWORDS = {
+    "please", "kindly", "sir", "madam", "hello", "thanks", "thank",
+    "dear", "hi", "regards", "asap", "hostel", "complaint", "request",
+    "warden", "office", "management", "student", "students", "look",
+    "also", "us", "am",
+}
+# Words that must NEVER be removed — negation / severity signals
+_PRESERVE_WORDS = {
+    "no", "not", "never", "cannot", "cant", "wont",
+    "isnt", "doesnt", "hasnt", "havent", "wasnt", "wouldnt",
+}
+_std_stopwords = set(stopwords.words("english"))
+_all_stopwords = (_std_stopwords | _DOMAIN_STOPWORDS) - _PRESERVE_WORDS
+
+_lemmatizer = WordNetLemmatizer()
+
+# ── Duration_Standardized → Duration_Hours (matches notebook exactly) ──────────
+#
+# Training data Duration_Standardized format: "N unit"
+# where unit ∈ {hour, hours, day, days, week, weeks}
+#
+# Exact values seen in Dataset_duration.csv:
+#   '1 hour', '2 hours', '3 hours', '4 hours', '5 hours', '6 hours', '8 hours'
+#   '1 day',  '2 days',  '3 days',  '4 days',  '6 days',  '8 days',
+#   '12 days','13 days'
+#   '1 week', '2 weeks', '4 weeks'
+#
+# Conversion (identical to notebook parse_dur()):
+#   hours  → value × 1
+#   days   → value × 24
+#   weeks  → value × 168
+
+_DURATION_DEFAULT_HOURS = 24.0   # median-ish fallback when value is None/unparseable
 
 
-# ── Internal helpers ───────────────────────────────────────────────────────────
+def _duration_to_hours(duration_str) -> float:
+    """
+    Convert a Duration_Standardized string (e.g. '2 days', '1 hour', '3 weeks')
+    to a float number of hours — identical to the notebook's parse_dur() function.
+
+    Only accepts the 'N unit' format present in the training dataset.
+    Returns _DURATION_DEFAULT_HOURS (24.0) for None or unrecognised values.
+    """
+    if not isinstance(duration_str, str) or not duration_str.strip():
+        return _DURATION_DEFAULT_HOURS
+    parts = duration_str.strip().lower().split()
+    if len(parts) != 2:
+        return _DURATION_DEFAULT_HOURS
+    try:
+        value = float(parts[0])
+    except ValueError:
+        return _DURATION_DEFAULT_HOURS
+    unit = parts[1]
+    if unit in ("hour", "hours"):
+        return value
+    if unit in ("day", "days"):
+        return value * 24.0
+    if unit in ("week", "weeks"):
+        return value * 168.0
+    return _DURATION_DEFAULT_HOURS
+
+
+# ── NLP preprocessing (matches notebook exactly) ───────────────────────────────
 
 def _preprocess_text(text: str) -> str:
     """
     Apply the same NLP pipeline used during model training:
-    lowercase → remove punctuation → remove digits → remove stopwords → lemmatise.
+
+    1. Lowercase
+    2. Domain-specific normalisation  (leakage→leaking, electricity→electric)
+    3. Contraction expansion          (isn't→is not, can't→cannot …)
+    4. Punctuation removal
+    5. Digit removal
+    6. Stopword removal + length filter (len ≥ 2 preserves "no")
+    7. Lemmatisation
     """
-    if not isinstance(text, str):
+    if not isinstance(text, str) or not text.strip():
         return ""
+
+    # 1. Lowercase
     text = text.lower()
-    text = re.sub(r"[^\w\s]", "", text)
-    text = re.sub(r"\d+", "", text)
+
+    # 2. Domain normalisation
+    text = re.sub(r"\bleakage\b", "leaking", text)
+    text = re.sub(r"\bleak\b",    "leaking", text)
+    text = re.sub(r"\belectricity\b", "electric", text)
+
+    # 3. Contraction expansion (BEFORE punctuation removal)
+    text = text.replace("can't",    "cannot")
+    text = text.replace("won't",    "wont")
+    text = text.replace("isn't",    "is not")
+    text = text.replace("doesn't",  "does not")
+    text = text.replace("hasn't",   "has not")
+    text = text.replace("haven't",  "have not")
+    text = text.replace("wasn't",   "was not")
+    text = text.replace("wouldn't", "would not")
+
+    # 4. Punctuation removal
+    text = re.sub(r"[^\w\s]", " ", text)
+
+    # 5. Digit removal (standalone numbers only)
+    text = re.sub(r"\b\d+\b", "", text)
+
+    # 6. Collapse whitespace
     text = re.sub(r"\s+", " ", text).strip()
+
+    # 7. Stopword removal (len ≥ 2 keeps "no") + lemmatisation
     tokens = [
         _lemmatizer.lemmatize(w)
         for w in text.split()
-        if w not in _all_stopwords and len(w) > 2
+        if w not in _all_stopwords and len(w) >= 2
     ]
     return " ".join(tokens)
 
@@ -75,64 +184,91 @@ def _preprocess_text(text: str) -> str:
 
 def is_model_loaded() -> bool:
     """Return True if all ML artifacts were loaded successfully."""
-    return _model is not None
+    return _preprocessor is not None and _model is not None
 
 
 def predict_priority(complaint_data: dict) -> str:
     """
-    Predict the priority of a complaint using the trained LinearSVC pipeline.
+    Predict the priority of a complaint using the trained LinearSVC model.
 
     Parameters
     ----------
     complaint_data : dict
-        Must contain the following keys (matching the training feature set):
-            - complaint_text   (str)  raw complaint text
-            - complaint_type   (str)  "Public" | "Private"
-            - block            (str)  "A" | "B" | "C" | "D"
-            - floor            (str)  "Ground" | "First" | "Second" | "Third"
-            - category         (str)  e.g. "Cleanliness", "Mess", …
-            - students_affected (int)
-            - support_count    (int)
+        Keys used:
+            complaint_text  (str)   — raw complaint text
+            complaint_type  (str)   — "Public" | "Private"
+            block           (str)   — "A" | "B" | "C" | "D"
+            floor           (str)   — "Ground"|"First"|"Second"|"Third"
+            category        (str)   — e.g. "Cleanliness", "Electricity" …
+            duration        (str)   — text duration choice (optional)
+            duration_hours  (float) — pre-computed numeric hours (optional;
+                                      takes precedence over `duration`)
+
+    NOT used by the ML model (excluded features):
+            students_affected, support_count, room_no, status, complaint_date
 
     Returns
     -------
-    str
-        One of: "Critical", "High", "Medium", "Low"
-        Returns "Unknown" if the model is not loaded.
+    str  — "High", "Medium", or "Low"
+           Returns "Unknown" if the model is not loaded.
     """
     if not is_model_loaded():
         logger.error("predict_priority called but ML model is not loaded.")
         return "Unknown"
 
-    # Apply same NLP preprocessing as training
+    # ── 1. Preprocess text ────────────────────────────────────────────────────
     cleaned_text = _preprocess_text(complaint_data.get("complaint_text", ""))
 
-    # Build a single-row DataFrame matching the training feature columns exactly
+    # ── 2. Resolve Duration_Hours ──────────────────────────────────────────────
+    # Priority: explicit duration_hours float > duration text choice > default
+    if "duration_hours" in complaint_data and complaint_data["duration_hours"] is not None:
+        duration_hours = float(complaint_data["duration_hours"])
+    else:
+        duration_hours = _duration_to_hours(complaint_data.get("duration"))
+
+    # ── 3. Build feature DataFrame (column names must match training exactly) ──
     row = pd.DataFrame([{
-        "Cleaned_Text":      cleaned_text,
-        "Complaint_Type":    complaint_data.get("complaint_type", "Public"),
-        "Block":             complaint_data.get("block", "A"),
-        "Floor":             complaint_data.get("floor", "Ground"),
-        "Category":          complaint_data.get("category", "Other"),
-        "Students_Affected": int(complaint_data.get("students_affected", 1)),
-        "Support_Count":     int(complaint_data.get("support_count", 0)),
+        "Cleaned_Text"  : cleaned_text,
+        "Category"      : complaint_data.get("category",       "Other"),
+        "Complaint_Type": complaint_data.get("complaint_type", "Public"),
+        "Block"         : complaint_data.get("block",          "A"),
+        "Floor"         : complaint_data.get("floor",          "Ground"),
+        "Duration_Hours": duration_hours,
     }])
 
-    # Pipeline predicts encoded label → decode back to string
-    encoded_pred = _model.predict(row)
+    # ── 4. Preprocess + predict ────────────────────────────────────────────────
+    X_proc = _preprocessor.transform(row)
+    if issparse(X_proc):
+        X_proc = X_proc.toarray()
+
+    encoded_pred = _model.predict(X_proc)
     priority     = _label_encoder.inverse_transform(encoded_pred)[0]
-    logger.debug("Predicted priority: %s for text: %.60s", priority, cleaned_text)
+
+    logger.debug(
+        "Predicted priority: %s | text: %.60s | category: %s | duration_h: %.1f",
+        priority, cleaned_text,
+        complaint_data.get("category", "?"),
+        duration_hours,
+    )
     return priority
 
 
 def get_model_info() -> dict:
-    """Return basic metadata about the loaded model (for the health/dashboard endpoints)."""
+    """Return basic metadata about the loaded model (for health/dashboard endpoints)."""
     if not is_model_loaded():
         return {"loaded": False}
     return {
-        "loaded":  True,
+        "loaded" : True,
         "classes": _label_encoder.classes_.tolist(),
-        "model":   type(_model).__name__,
+        "model"  : type(_model).__name__,
+        "features": [
+            "Cleaned_Text (TF-IDF)",
+            "Category (OHE)",
+            "Complaint_Type (OHE)",
+            "Block (OHE)",
+            "Floor (OHE)",
+            "Duration_Hours (StandardScaler)",
+        ],
     }
 
 
@@ -176,21 +312,17 @@ def escalate_priority(base_priority: str, support_count: int) -> str:
     idx = PRIORITY_ORDER.index(base_priority)
 
     if support_count <= 10:
-        # No change — community support is too low to escalate
         return base_priority
 
     elif 11 <= support_count <= 25:
-        # Always bump one level
         return PRIORITY_ORDER[min(idx + 1, 3)]
 
     elif 26 <= support_count <= 50:
-        # Only bump if currently Low or Medium (idx < 2)
         if idx < 2:
             return PRIORITY_ORDER[idx + 1]
         return base_priority
 
     else:
-        # support_count > 50 — always bump one level
         return PRIORITY_ORDER[min(idx + 1, 3)]
 
 
@@ -199,8 +331,8 @@ def apply_priority_update(complaint) -> str:
     Re-run ML prediction on the complaint's current field values,
     then apply escalation rules, and return the updated priority string.
 
-    This is called after every support vote change so that predicted_priority
-    always reflects both ML severity AND community impact.
+    Duration_Hours is computed from the complaint's `duration` field.
+    If `created_at` is available, elapsed time is used as a fallback.
 
     Parameters
     ----------
@@ -212,13 +344,12 @@ def apply_priority_update(complaint) -> str:
     """
     # Step 1: Re-run the ML model with current complaint data
     ml_priority = predict_priority({
-        "complaint_text":    complaint.complaint_text,
-        "complaint_type":    complaint.complaint_type,
-        "block":             complaint.block,
-        "floor":             complaint.floor,
-        "category":          complaint.category,
-        "students_affected": complaint.students_affected,
-        "support_count":     complaint.support_count,
+        "complaint_text" : complaint.complaint_text,
+        "complaint_type" : complaint.complaint_type,
+        "block"          : complaint.block,
+        "floor"          : complaint.floor,
+        "category"       : complaint.category,
+        "duration"       : getattr(complaint, "duration", None),
     })
 
     # Step 2: Apply escalation on top of ML result

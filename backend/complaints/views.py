@@ -159,7 +159,7 @@ class PredictView(APIView):
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def post(self, request):
-        serializer = PredictOnlySerializer(data=request.data)
+        serializer = PredictOnlySerializer(data=request.data, context={"request": request})
         if not serializer.is_valid():
             return Response(
                 {"errors": serializer.errors},
@@ -209,13 +209,12 @@ class ComplaintListCreateView(ListCreateAPIView):
         # Run ML prediction
         data = serializer.validated_data
         priority = predict_priority({
-            "complaint_text":    data.get("complaint_text", ""),
-            "complaint_type":    data.get("complaint_type", "Public"),
-            "block":             data.get("block", "A"),
-            "floor":             data.get("floor", "Ground"),
-            "category":          data.get("category", "Other"),
-            "students_affected": data.get("students_affected", 1),
-            "support_count":     0,
+            "complaint_text" : data.get("complaint_text", ""),
+            "complaint_type" : data.get("complaint_type", "Public"),
+            "block"          : data.get("block", "A"),
+            "floor"          : data.get("floor", "Ground"),
+            "category"       : data.get("category", "Other"),
+            "duration"       : data.get("duration"),   # "N unit" format → Duration_Hours
         })
         serializer.save(
             submitted_by=self.request.user,
@@ -225,8 +224,8 @@ class ComplaintListCreateView(ListCreateAPIView):
             created_at=timezone.now(),
         )
         logger.info(
-            "New complaint by %s — priority: %s",
-            self.request.user.username, priority,
+            "New complaint by %s — priority: %s | duration: %s",
+            self.request.user.username, priority, data.get("duration"),
         )
 
     def create(self, request, *args, **kwargs):

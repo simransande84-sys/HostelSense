@@ -1,78 +1,30 @@
 {
-  "model_name": "SVM (tuned)",
-  "test_f1_score": 0.8248,
-  "test_accuracy": 0.825,
+  "model_name": "LinearSVC",
+  "dataset": "Dataset_duration.csv",
+  "n_samples": 857,
+  "n_train": 685,
+  "n_test": 172,
+  "n_features": 1537,
+  "tfidf_features": 1497,
+  "ohe_features": 39,
+  "num_features": 1,
   "classes": [
-    "Critical",
     "High",
-    "Low",
-    "Medium"
+    "Medium",
+    "Low"
   ],
-  "class_encoding": {
-    "Critical": 0,
-    "High": 1,
-    "Low": 2,
-    "Medium": 3
-  },
-  "features_used": [
-    "Cleaned_Text (TF-IDF)",
-    "Complaint_Type",
-    "Block",
-    "Floor",
-    "Category",
-    "Students_Affected",
-    "Support_Count"
+  "train_accuracy": 0.9927,
+  "test_accuracy": 0.6628,
+  "test_f1_weighted": 0.6627,
+  "cv_accuracy_mean": 0.7048,
+  "cv_f1_mean": 0.7043,
+  "excluded": [
+    "Support_Count",
+    "Room_No",
+    "Status",
+    "Complaint_Date",
+    "Complaint_ID",
+    "Duration_Standardized"
   ],
-  "categorical_features": [
-    "Complaint_Type",
-    "Block",
-    "Floor",
-    "Category"
-  ],
-  "numerical_features": [
-    "Students_Affected",
-    "Support_Count"
-  ],
-  "training_samples": 640,
-  "test_samples": 160,
-  "tfidf_params": {
-    "max_features": 1000,
-    "ngram_range": "(1,2)",
-    "min_df": 2,
-    "max_df": 0.95,
-    "sublinear_tf": true
-  },
-  "all_model_results": {
-    "Logistic Regression": {
-      "Accuracy": 0.7688,
-      "Precision": 0.7754,
-      "Recall": 0.7688,
-      "F1-Score": 0.7691
-    },
-    "Random Forest": {
-      "Accuracy": 0.7875,
-      "Precision": 0.7907,
-      "Recall": 0.7875,
-      "F1-Score": 0.7878
-    },
-    "Linear SVM": {
-      "Accuracy": 0.8375,
-      "Precision": 0.839,
-      "Recall": 0.8375,
-      "F1-Score": 0.8368
-    },
-    "Naive Bayes": {
-      "Accuracy": 0.7375,
-      "Precision": 0.7361,
-      "Recall": 0.7375,
-      "F1-Score": 0.732
-    }
-  },
-  "preprocessing_steps": [
-    "lowercase",
-    "remove_punctuation",
-    "remove_numbers",
-    "remove_stopwords (standard + domain)",
-    "lemmatization"
-  ]
+  "leakage_fixed": true
 }

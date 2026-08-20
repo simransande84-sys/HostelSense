@@ -11,6 +11,7 @@ export interface Complaint {
   floor: string;
   room_no: string;
   students_affected: number;
+  duration: string | null;
   support_count: number;
   predicted_priority: Priority;
   status: ComplaintStatus;
@@ -23,18 +24,19 @@ export interface ComplaintCreatePayload {
   complaint_text: string;
   complaint_type: ComplaintType;
   category: string;
-  block: string;
-  floor: string;
+  block?: string;
+  floor?: string;
   room_no?: string;
   students_affected: number;
+  duration: string;
 }
 
 export interface PredictPayload {
   complaint_text: string;
   complaint_type: string;
   category: string;
-  block: string;
-  floor: string;
+  block?: string;
+  floor?: string;
   students_affected: number;
   support_count: number;
 }

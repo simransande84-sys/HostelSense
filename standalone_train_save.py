@@ -63,6 +63,8 @@ def preprocess_text(text):
     if not isinstance(text, str):
         return ''
     text = text.lower()
+    text = re.sub(r'\bleakage\b', 'leaking', text)
+    text = re.sub(r'\bleak\b', 'leaking', text)
     text = re.sub(r'[^\w\s]', '', text)
     text = re.sub(r'\d+', '', text)
     text = re.sub(r'\s+', ' ', text).strip()

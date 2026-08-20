@@ -5,17 +5,17 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { ComplaintService } from '../../core/services/complaint.service';
-import { Complaint, Priority } from '../../core/models/complaint.model';
-import { PriorityBadgeComponent } from '../../shared/components/priority-badge/priority-badge.component';
+import { Complaint } from '../../core/models/complaint.model';
+
 
 @Component({
   selector: 'app-submit-complaint',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatSnackBarModule, MatProgressSpinnerModule, MatSelectModule, PriorityBadgeComponent],
+  imports: [CommonModule, FormsModule, MatSnackBarModule, MatProgressSpinnerModule, MatSelectModule],
   template: `
     <div class="page-header">
       <h1>Submit Hostel Request</h1>
-      <p>Log a facility or maintenance issue. The system evaluates severity via ML analysis.</p>
+      <p>Log a facility or maintenance issue and track its resolution status.</p>
     </div>
 
     <div class="submit-grid">
@@ -58,55 +58,28 @@ import { PriorityBadgeComponent } from '../../shared/components/priority-badge/p
           </div>
 
           <!-- Section 2: Details -->
-          <div class="form-section">
+          <div class="form-section mb-0">
             <div class="field-group">
               <label class="field-label">Complaint Description <span class="req">*</span></label>
               <textarea [(ngModel)]="form.complaint_text" name="complaint_text" rows="4"
                         placeholder="Provide exact details of the defect, location inside the room/hallway, and urgency (min. 10 characters)..."
-                        (blur)="previewPriority()" required></textarea>
+                        required></textarea>
             </div>
 
-            <div class="grid-2-form">
-              <div class="field-group">
-                <label class="field-label">Category <span class="req">*</span></label>
-                <mat-select [(ngModel)]="form.category" name="category" placeholder="Select Category" required (selectionChange)="previewPriority()">
-                  <mat-option value="">Select Category</mat-option>
-                  <mat-option *ngFor="let c of categories" [value]="c">{{ c }}</mat-option>
-                </mat-select>
-              </div>
-
-              <div class="field-group">
-                <label class="field-label">Students Affected <span class="req">*</span></label>
-                <input type="number" [(ngModel)]="form.students_affected" name="students_affected"
-                       min="1" placeholder="e.g. 10" required />
-              </div>
+            <div class="field-group">
+              <label class="field-label">Category <span class="req">*</span></label>
+              <mat-select [(ngModel)]="form.category" name="category" placeholder="Select Category" required>
+                <mat-option value="">Select Category</mat-option>
+                <mat-option *ngFor="let c of categories" [value]="c">{{ c }}</mat-option>
+              </mat-select>
             </div>
-          </div>
 
-          <!-- Section 3: Location -->
-          <div class="form-section mb-0">
-            <label class="section-label">Hostel Location Details</label>
-            <div class="grid-3-form">
-              <div class="field-group">
-                <label class="field-label">Block <span class="req">*</span></label>
-                <mat-select [(ngModel)]="form.block" name="block" placeholder="Select Block" required (selectionChange)="previewPriority()">
-                  <mat-option value="">Select Block</mat-option>
-                  <mat-option *ngFor="let b of blocks" [value]="b">Block {{ b }}</mat-option>
-                </mat-select>
-              </div>
-
-              <div class="field-group">
-                <label class="field-label">Floor <span class="req">*</span></label>
-                <mat-select [(ngModel)]="form.floor" name="floor" placeholder="Select Floor" required (selectionChange)="previewPriority()">
-                  <mat-option value="">Select Floor</mat-option>
-                  <mat-option *ngFor="let f of floors" [value]="f">{{ f }} Floor</mat-option>
-                </mat-select>
-              </div>
-
-              <div class="field-group">
-                <label class="field-label">Room No.</label>
-                <input type="text" [(ngModel)]="form.room_no" name="room_no" placeholder="e.g. 210" />
-              </div>
+            <div class="field-group">
+              <label class="field-label">How long has this issue existed? <span class="req">*</span></label>
+              <mat-select [(ngModel)]="form.duration" name="duration" placeholder="Select Duration" required>
+                <mat-option value="">Select Duration</mat-option>
+                <mat-option *ngFor="let d of durationOptions" [value]="d">{{ d }}</mat-option>
+              </mat-select>
             </div>
           </div>
 
@@ -121,20 +94,6 @@ import { PriorityBadgeComponent } from '../../shared/components/priority-badge/p
 
       <!-- Right Column Cards -->
       <div class="right-panel">
-        <!-- Live AI Scoring Card -->
-        <div class="card preview-card" *ngIf="preview()">
-          <div class="preview-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-            </svg>
-            <span>Live ML Severity Prediction</span>
-          </div>
-          <div class="preview-body">
-            <span class="preview-label">Estimated Priority:</span>
-            <app-priority-badge [priority]="preview()!" />
-          </div>
-          <p class="preview-note">Automated prediction generated by ML model based on description and impact metrics.</p>
-        </div>
 
         <!-- Success Confirmation Card -->
         <div class="card success-card" *ngIf="submitted()">
@@ -147,10 +106,6 @@ import { PriorityBadgeComponent } from '../../shared/components/priority-badge/p
           <p>Your complaint has been assigned ticket ID <strong>#{{ submitted()!.id }}</strong>.</p>
           <div class="submitted-meta">
             <div>
-              <span class="meta-title">Assigned Priority:</span>
-              <app-priority-badge [priority]="submitted()!.predicted_priority" />
-            </div>
-            <div>
               <span class="meta-title">Status:</span>
               <strong>{{ submitted()!.status }}</strong>
             </div>
@@ -158,24 +113,6 @@ import { PriorityBadgeComponent } from '../../shared/components/priority-badge/p
           <button class="btn-secondary full-width mt-16" (click)="resetForm()">Submit Another Issue</button>
         </div>
 
-        <!-- Process Workflow Info Card -->
-        <div class="card info-card">
-          <h3 class="info-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="16" x2="12" y2="12"/>
-              <line x1="12" y1="8" x2="12.01" y2="8"/>
-            </svg>
-            Processing Workflow
-          </h3>
-          <ul class="steps-list">
-            <li><span>1</span> Input defect details & location parameters</li>
-            <li><span>2</span> NLP Model computes baseline priority score</li>
-            <li><span>3</span> Request logged in University administration queue</li>
-            <li><span>4</span> Public feed upvotes dynamically adjust priority ranking</li>
-            <li><span>5</span> Maintenance department dispatched accordingly</li>
-          </ul>
-        </div>
       </div>
     </div>
   `,
@@ -422,47 +359,69 @@ import { PriorityBadgeComponent } from '../../shared/components/priority-badge/p
 export class SubmitComplaintComponent {
   types      = ['Public', 'Private'];
   categories = ['Cleanliness','Mess','Washroom','Furniture','Water Cooler','Security','Electricity','WiFi','Other'];
-  blocks     = ['A','B','C','D'];
-  floors     = ['Ground','First','Second','Third'];
+
+  // Exact Duration_Standardized values from training dataset (Dataset_duration.csv)
+  durationOptions = [
+    '1 hour', '2 hours', '3 hours', '4 hours', '5 hours', '6 hours', '8 hours',
+    '1 day', '2 days', '3 days', '4 days', '6 days', '8 days', '12 days',
+    '1 week', '2 weeks', '4 weeks'
+  ];
 
   form = {
     complaint_type: 'Public', complaint_text: '', category: '',
-    block: '', floor: '', room_no: '', students_affected: 1
+    duration: '', students_affected: 1
   };
 
-  preview   = signal<Priority | null>(null);
   submitted = signal<Complaint | null>(null);
   submitting = signal(false);
 
   constructor(private svc: ComplaintService, private snack: MatSnackBar) {}
 
-  previewPriority(): void {
-    if (this.form.complaint_text.length < 10 || !this.form.block || !this.form.floor) return;
-    this.svc.predict({
-      complaint_text: this.form.complaint_text,
-      complaint_type: this.form.complaint_type,
-      category: this.form.category || 'Other',
-      block: this.form.block,
-      floor: this.form.floor,
-      students_affected: this.form.students_affected,
-      support_count: 0
-    }).subscribe(res => this.preview.set(res.predicted_priority));
-  }
-
   onSubmit(): void {
-    const { complaint_text, category, block, floor, complaint_type, students_affected, room_no } = this.form;
-    if (!complaint_text || !category || !block || !floor) {
+    // Prevent duplicate submissions while a request is already in-flight
+    if (this.submitting()) return;
+
+    const { complaint_text, category, complaint_type, students_affected, duration } = this.form;
+    if (!complaint_text.trim() || !category || !duration) {
       this.snack.open('Please fill all required fields.', 'Close', { duration: 3000 }); return;
     }
+
     this.submitting.set(true);
-    this.svc.create({ complaint_text, complaint_type: complaint_type as any, category, block, floor, room_no, students_affected }).subscribe({
-      next: c => { this.submitting.set(false); this.submitted.set(c); },
-      error: () => { this.submitting.set(false); this.snack.open('Submission failed. Try again.', 'Close', { duration: 3000 }); }
+    this.svc.create({ complaint_text, complaint_type: complaint_type as any, category, students_affected, duration }).subscribe({
+      next: c => {
+        // Reset form FIRST so stale data never persists on the page
+        this.form = { complaint_type: 'Public', complaint_text: '', category: '', duration: '', students_affected: 1 };
+        this.submitted.set(c);
+        this.submitting.set(false);
+      },
+      error: err => {
+        // Keep form data intact so the student can retry without re-entering
+        this.submitting.set(false);
+        let errMsg = 'Submission failed. Try again.';
+        if (err.error) {
+          if (typeof err.error === 'string') {
+            errMsg = err.error;
+          } else if (Array.isArray(err.error) && err.error.length > 0) {
+            errMsg = err.error[0];
+          } else if (typeof err.error === 'object') {
+            const values = Object.values(err.error);
+            if (values.length > 0) {
+              const firstVal: any = values[0];
+              if (Array.isArray(firstVal) && firstVal.length > 0) {
+                errMsg = firstVal[0];
+              } else if (typeof firstVal === 'string') {
+                errMsg = firstVal;
+              }
+            }
+          }
+        }
+        this.snack.open(errMsg, 'Close', { duration: 5000 });
+      }
     });
   }
 
   resetForm(): void {
-    this.form = { complaint_type:'Public', complaint_text:'', category:'', block:'', floor:'', room_no:'', students_affected:1 };
-    this.preview.set(null); this.submitted.set(null);
+    this.form = { complaint_type: 'Public', complaint_text: '', category: '', duration: '', students_affected: 1 };
+    this.submitted.set(null);
   }
 }

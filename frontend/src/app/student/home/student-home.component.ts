@@ -4,13 +4,13 @@ import { RouterModule } from '@angular/router';
 import { ComplaintService } from '../../core/services/complaint.service';
 import { AuthService } from '../../core/services/auth.service';
 import { Complaint } from '../../core/models/complaint.model';
-import { PriorityBadgeComponent } from '../../shared/components/priority-badge/priority-badge.component';
+
 import { StatusBadgeComponent } from '../../shared/components/status-badge/status-badge.component';
 
 @Component({
   selector: 'app-student-home',
   standalone: true,
-  imports: [CommonModule, RouterModule, PriorityBadgeComponent, StatusBadgeComponent],
+  imports: [CommonModule, RouterModule, StatusBadgeComponent],
   template: `
     <div class="page-header">
       <h1>Welcome, {{ auth.currentUser()?.first_name || 'Student' }}</h1>
@@ -84,7 +84,7 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
         </div>
         <div class="action-content">
           <div class="action-title">Submit New Complaint</div>
-          <div class="action-desc">Report an infrastructure or facility issue. Automated ML priority scoring will evaluate impact.</div>
+          <div class="action-desc">Report an infrastructure or facility issue and track its resolution status.</div>
         </div>
         <svg class="action-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="9 18 15 12 9 6"/>
@@ -142,7 +142,7 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
             <tr>
               <th>Description</th>
               <th>Category</th>
-              <th>Priority Score</th>
+
               <th>Status</th>
               <th>Date</th>
             </tr>
@@ -151,7 +151,7 @@ import { StatusBadgeComponent } from '../../shared/components/status-badge/statu
             <tr *ngFor="let c of myComplaints().slice(0,5)">
               <td class="text-cell">{{ c.complaint_text | slice:0:70 }}{{ c.complaint_text.length > 70 ? '…' : '' }}</td>
               <td><span class="category-chip">{{ c.category }}</span></td>
-              <td><app-priority-badge [priority]="c.predicted_priority" /></td>
+
               <td><app-status-badge [status]="c.status" /></td>
               <td class="date-cell">{{ c.created_at | date:'dd MMM yyyy' }}</td>
             </tr>

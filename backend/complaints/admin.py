@@ -10,7 +10,7 @@ from .models import Complaint, ComplaintVote, StudentProfile
 @admin.register(Complaint)
 class ComplaintAdmin(admin.ModelAdmin):
     list_display  = ("id", "short_text", "complaint_type", "category", "block",
-                     "floor", "predicted_priority", "status", "support_count", "created_at")
+                     "floor", "duration", "predicted_priority", "status", "support_count", "created_at")
     list_filter   = ("predicted_priority", "status", "complaint_type", "category", "block")
     search_fields = ("complaint_text",)
     readonly_fields = ("predicted_priority", "support_count", "created_at")
